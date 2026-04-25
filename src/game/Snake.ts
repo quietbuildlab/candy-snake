@@ -19,10 +19,19 @@ export class Snake {
     this.direction = next;
     return true;
   }
-  advance(opts: { grow: boolean }): void {
+  advance(opts: { grow: boolean; maxLength?: number }): void {
     const v = DIR_VECTORS[this.direction];
     const newHead = { x: this.head.x + v.x, y: this.head.y + v.y };
     this.body.unshift(newHead);
-    if (!opts.grow) this.body.pop();
+    const cap = opts.maxLength ?? Infinity;
+    const shouldGrow = opts.grow && this.body.length <= cap;
+    if (!shouldGrow) this.body.pop();
+  }
+  hitsSelf(): boolean {
+    const h = this.head;
+    for (let i = 1; i < this.body.length; i++) {
+      if (this.body[i].x === h.x && this.body[i].y === h.y) return true;
+    }
+    return false;
   }
 }
