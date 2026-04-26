@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import { Direction, OPPOSITE } from '../types';
 
 export class DirectionBuffer {
@@ -15,4 +16,26 @@ export class DirectionBuffer {
     return this.current;
   }
   peekCurrent(): Direction { return this.current; }
+}
+
+export type DirEventListener = (d: Direction) => void;
+
+export class KeyboardInput {
+  private buffer: DirectionBuffer;
+  constructor(scene: Phaser.Scene, initial: Direction) {
+    this.buffer = new DirectionBuffer(initial);
+    const kb = scene.input.keyboard!;
+    const map: Array<[string, Direction]> = [
+      ['UP', 'up'], ['W', 'up'],
+      ['DOWN', 'down'], ['S', 'down'],
+      ['LEFT', 'left'], ['A', 'left'],
+      ['RIGHT', 'right'], ['D', 'right']
+    ];
+    for (const [key, dir] of map) {
+      kb.on(`keydown-${key}`, () => this.buffer.tryQueue(dir));
+    }
+  }
+  consumeDirection(): Direction { return this.buffer.consume(); }
+  setCurrent(_: Direction): void { /* not needed; buffer tracks via consume */ }
+  getBuffer(): DirectionBuffer { return this.buffer; }  /* Task 24 swipe will use this */
 }

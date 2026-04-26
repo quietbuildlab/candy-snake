@@ -3,6 +3,7 @@ import { CONFIG } from '../config';
 import { THEME } from '../theme';
 import { Grid } from '../game/Grid';
 import { Snake } from '../game/Snake';
+import { KeyboardInput } from '../input/KeyboardInput';
 import type { Cell } from '../types';
 
 export class GameScene extends Phaser.Scene {
@@ -13,6 +14,7 @@ export class GameScene extends Phaser.Scene {
   private segments: Phaser.GameObjects.Arc[] = [];
   private tickEvent?: Phaser.Time.TimerEvent;
   private currentTickMs = CONFIG.ticks.initialMs;
+  private input2!: KeyboardInput;
 
   constructor() { super('GameScene'); }
 
@@ -27,6 +29,7 @@ export class GameScene extends Phaser.Scene {
     this.boardOriginY = (this.scale.height - this.grid.heightPx) / 2 + 20;
     this.drawBoard();
     this.spawnSegments();
+    this.input2 = new KeyboardInput(this, this.snake.direction);
     this.startTickLoop();
   }
 
@@ -68,6 +71,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tick() {
+    const nextDir = this.input2.consumeDirection();
+    this.snake.setDirection(nextDir);
     this.snake.advance({ grow: false, maxLength: CONFIG.snake.maxLength });
     this.tweenSegmentsToBody();
   }
