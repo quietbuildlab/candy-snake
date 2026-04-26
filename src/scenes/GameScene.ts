@@ -24,6 +24,7 @@ export class GameScene extends Phaser.Scene {
   private boardOriginX = 0;
   private boardOriginY = 0;
   private segments: Phaser.GameObjects.Arc[] = [];
+  private headContainer?: Phaser.GameObjects.Container;
   private tickEvent?: Phaser.Time.TimerEvent;
   private currentTickMs = CONFIG.ticks.initialMs;
   private input2!: KeyboardInput;
@@ -201,12 +202,26 @@ export class GameScene extends Phaser.Scene {
 
   private spawnSegments() {
     for (const seg of this.segments) seg.destroy();
+    this.headContainer?.destroy();
     this.segments = this.snake.body.map((c, i) => {
       const p = this.cellCenterPx(c);
       const radius = i === 0 ? 12 : 11;
       const color = i === 0 ? THEME.colors.snakeDark : THEME.colors.snakeLight;
       return this.add.circle(p.x, p.y, radius, color);
     });
+    // Build head decoration (eyes) as a container we'll rotate
+    const headP = this.cellCenterPx(this.snake.body[0]);
+    this.headContainer = this.add.container(headP.x, headP.y);
+    const lEye = this.add.circle(3, -3, 2, 0x1a1a1a);
+    const rEye = this.add.circle(3, 3, 2, 0x1a1a1a);
+    this.headContainer.add([lEye, rEye]);
+    this.updateHeadRotation();
+  }
+
+  private updateHeadRotation() {
+    if (!this.headContainer) return;
+    const map = { right: 0, down: Math.PI/2, left: Math.PI, up: -Math.PI/2 };
+    this.headContainer.setRotation(map[this.snake.direction]);
   }
 
   private startTickLoop() {
@@ -281,6 +296,10 @@ export class GameScene extends Phaser.Scene {
       const headPx = this.cellCenterPx(this.snake.body[0]);
       this.tweens.killTweensOf(this.segments[0]);
       this.segments[0].setPosition(headPx.x, headPx.y);
+      if (this.headContainer) {
+        this.tweens.killTweensOf(this.headContainer);
+        this.headContainer.setPosition(headPx.x, headPx.y);
+      }
     }
 
     this.collectPowerUpIfHere(newHead);
@@ -388,6 +407,11 @@ export class GameScene extends Phaser.Scene {
     for (let i = 0; i < body.length; i++) {
       const p = this.cellCenterPx(body[i]);
       this.tweens.add({ targets: this.segments[i], x: p.x, y: p.y, duration: dur, ease: THEME.easings.snakeMove });
+    }
+    if (this.headContainer) {
+      const hp = this.cellCenterPx(body[0]);
+      this.tweens.add({ targets: this.headContainer, x: hp.x, y: hp.y, duration: dur, ease: THEME.easings.snakeMove });
+      this.updateHeadRotation();
     }
   }
 }
