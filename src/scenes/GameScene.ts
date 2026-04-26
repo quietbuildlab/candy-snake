@@ -26,7 +26,7 @@ export class GameScene extends Phaser.Scene {
   private segments: Phaser.GameObjects.Arc[] = [];
   private headContainer?: Phaser.GameObjects.Container;
   private tickEvent?: Phaser.Time.TimerEvent;
-  private currentTickMs = CONFIG.ticks.initialMs;
+  private currentTickMs: number = CONFIG.ticks.initialMs;
   private input2!: KeyboardInput;
   private food: { cell: Cell; kind: FoodKind; spawnedAt: number } | null = null;
   private foodGfx?: Phaser.GameObjects.Container;
@@ -330,10 +330,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Apply slow-mo by scaling next interval (drain in the next tick reads this back)
-    if (this.tickEvent && this.pu.isActive('slowmo')) {
-      this.tickEvent.delay = this.currentTickMs * CONFIG.powerUps.slowmoFactor;
-    } else if (this.tickEvent) {
-      this.tickEvent.delay = this.currentTickMs;
+    if (this.tickEvent) {
+      const newDelay = this.pu.isActive('slowmo') ? this.currentTickMs * CONFIG.powerUps.slowmoFactor : this.currentTickMs;
+      this.tickEvent.reset({ delay: newDelay, loop: true, callback: () => this.tick(), callbackScope: this });
     }
   }
 
@@ -381,7 +380,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  update(_time: number, _delta: number) {
+  override update(_time: number, _delta: number) {
     if (!this.food) return;
     if (this.food.kind === 'apple') return;
     const lifetime = this.food.kind === 'berry' ? CONFIG.food.berryLifetimeMs : CONFIG.food.starLifetimeMs;
