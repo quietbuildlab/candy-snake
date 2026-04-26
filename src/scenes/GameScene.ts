@@ -137,6 +137,17 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  update(_time: number, _delta: number) {
+    if (!this.food) return;
+    if (this.food.kind === 'apple') return;
+    const lifetime = this.food.kind === 'berry' ? CONFIG.food.berryLifetimeMs : CONFIG.food.starLifetimeMs;
+    if (this.time.now - this.food.spawnedAt >= lifetime) {
+      // Convert to apple in same cell
+      this.food = { cell: this.food.cell, kind: 'apple', spawnedAt: this.time.now };
+      this.renderFood();
+    }
+  }
+
   private tweenSegmentsToBody() {
     const body = this.snake.body;
     // Add new head segment if needed
