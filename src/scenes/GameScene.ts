@@ -48,6 +48,26 @@ export class GameScene extends Phaser.Scene {
   constructor() { super('GameScene'); }
 
   create() {
+    // Reset all per-run state. Phaser reuses scene instances across
+    // scene.start('GameScene'), so field initializers only fire once at game
+    // launch — without this reset, score/lives/level carry over from the
+    // previous run after "Play Again."
+    this.score = 0;
+    this.lives = CONFIG.lives.start;
+    this.invulnerableUntil = 0;
+    this.fruitsEaten = 0;
+    this.level = 1;
+    this.obstacles = [];
+    this.obstacleGfx = [];
+    this.puIcon = null;
+    this.pu = new PowerUpController();
+    this.currentTickMs = CONFIG.ticks.initialMs;
+    this.food = null;
+    this.foodGfx = undefined;
+    this.segments = [];
+    this.headContainer = undefined;
+    this.tickEvent = undefined;
+
     this.flow = createActor(gameFlowMachine);
     this.flow.start();
     this.events.once('shutdown', () => this.flow.stop());
