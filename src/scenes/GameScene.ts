@@ -39,6 +39,7 @@ export class GameScene extends Phaser.Scene {
   private puIcon: { kind: PowerUpKind; cell: Cell; spawnedAt: number; gfx: Phaser.GameObjects.Container } | null = null;
   private flow = createActor(gameFlowMachine);
   private hud!: HUD;
+  private onVisibilityChange = () => { if (document.hidden && !this.scene.isPaused()) this.pauseGame(); };
 
   constructor() { super('GameScene'); }
 
@@ -55,9 +56,7 @@ export class GameScene extends Phaser.Scene {
     this.boardOriginX = (this.scale.width - this.grid.widthPx) / 2;
     this.boardOriginY = (this.scale.height - this.grid.heightPx) / 2 + 20;
     this.drawBoard();
-    // Pause callback is wired in Task 22 once pauseGame() exists. Leave it
-    // undefined here so Task 21's commit compiles cleanly on its own.
-    this.hud = new HUD(this, this.boardOriginX, this.boardOriginY, this.grid.widthPx);
+    this.hud = new HUD(this, this.boardOriginX, this.boardOriginY, this.grid.widthPx, () => this.pauseGame());
     this.hud.setLives(this.lives);
     this.hud.setScore(0);
     this.hud.setLevel(1);
@@ -65,6 +64,21 @@ export class GameScene extends Phaser.Scene {
     this.input2 = new KeyboardInput(this, this.snake.direction);
     this.spawnFood();
     this.startTickLoop();
+    this.input.keyboard?.on('keydown-ESC', () => this.pauseGame());
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
+    this.events.once('shutdown', () => document.removeEventListener('visibilitychange', this.onVisibilityChange));
+  }
+
+  private pauseGame() {
+    if (this.scene.isPaused()) return;
+    this.flow.send({ type: 'PAUSE' });
+    this.scene.pause();
+    this.scene.launch('PauseScene');
+  }
+
+  public resumeFromPause() {
+    this.flow.send({ type: 'RESUME' });
+    this.scene.resume();
   }
 
   /**
