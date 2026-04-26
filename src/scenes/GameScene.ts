@@ -10,7 +10,9 @@ export class GameScene extends Phaser.Scene {
   private snake!: Snake;
   private boardOriginX = 0;
   private boardOriginY = 0;
-  private snakeGfx!: Phaser.GameObjects.Graphics;
+  private segments: Phaser.GameObjects.Arc[] = [];
+  private tickEvent?: Phaser.Time.TimerEvent;
+  private currentTickMs = CONFIG.ticks.initialMs;
 
   constructor() { super('GameScene'); }
 
@@ -21,26 +23,11 @@ export class GameScene extends Phaser.Scene {
       CONFIG.snake.initialDirection,
       CONFIG.snake.initialLength
     );
-
-    // Center the play card on the canvas
     this.boardOriginX = (this.scale.width - this.grid.widthPx) / 2;
     this.boardOriginY = (this.scale.height - this.grid.heightPx) / 2 + 20;
-
-    // Play card background
-    const card = this.add.graphics();
-    card.fillStyle(THEME.colors.surface, 1);
-    card.fillRoundedRect(this.boardOriginX - 12, this.boardOriginY - 12, this.grid.widthPx + 24, this.grid.heightPx + 24, 24);
-    // Soft inner dot grid
-    card.fillStyle(THEME.colors.accentPurple, 0.06);
-    for (let y = 0; y < CONFIG.grid.rows; y++) {
-      for (let x = 0; x < CONFIG.grid.cols; x++) {
-        const p = this.cellCenterPx({ x, y });
-        card.fillCircle(p.x, p.y, 1.2);
-      }
-    }
-
-    this.snakeGfx = this.add.graphics();
-    this.renderSnake();
+    this.drawBoard();
+    this.spawnSegments();
+    this.startTickLoop();
   }
 
   private cellCenterPx(c: Cell) {
@@ -48,27 +35,58 @@ export class GameScene extends Phaser.Scene {
     return { x: this.boardOriginX + p.x, y: this.boardOriginY + p.y };
   }
 
-  private renderSnake() {
-    this.snakeGfx.clear();
+  private drawBoard() {
+    const card = this.add.graphics();
+    card.fillStyle(THEME.colors.surface, 1);
+    card.fillRoundedRect(this.boardOriginX - 12, this.boardOriginY - 12, this.grid.widthPx + 24, this.grid.heightPx + 24, 24);
+    card.fillStyle(THEME.colors.accentPurple, 0.06);
+    for (let y = 0; y < CONFIG.grid.rows; y++) {
+      for (let x = 0; x < CONFIG.grid.cols; x++) {
+        const p = this.cellCenterPx({ x, y });
+        card.fillCircle(p.x, p.y, 1.2);
+      }
+    }
+  }
+
+  private spawnSegments() {
+    for (const seg of this.segments) seg.destroy();
+    this.segments = this.snake.body.map((c, i) => {
+      const p = this.cellCenterPx(c);
+      const radius = i === 0 ? 12 : 11;
+      const color = i === 0 ? THEME.colors.snakeDark : THEME.colors.snakeLight;
+      return this.add.circle(p.x, p.y, radius, color);
+    });
+  }
+
+  private startTickLoop() {
+    this.tickEvent?.destroy();
+    this.tickEvent = this.time.addEvent({
+      delay: this.currentTickMs,
+      loop: true,
+      callback: () => this.tick()
+    });
+  }
+
+  private tick() {
+    this.snake.advance({ grow: false, maxLength: CONFIG.snake.maxLength });
+    this.tweenSegmentsToBody();
+  }
+
+  private tweenSegmentsToBody() {
     const body = this.snake.body;
+    // Add new head segment if needed
+    while (this.segments.length < body.length) {
+      const last = this.segments[this.segments.length - 1];
+      this.segments.push(this.add.circle(last?.x ?? 0, last?.y ?? 0, 11, THEME.colors.snakeLight));
+    }
+    // Remove tail if shrunk
+    while (this.segments.length > body.length) {
+      this.segments.pop()?.destroy();
+    }
+    const dur = this.currentTickMs * 0.7;
     for (let i = 0; i < body.length; i++) {
       const p = this.cellCenterPx(body[i]);
-      const t = i / Math.max(1, body.length - 1);
-      const c = Phaser.Display.Color.Interpolate.ColorWithColor(
-        Phaser.Display.Color.IntegerToColor(THEME.colors.snakeDark),
-        Phaser.Display.Color.IntegerToColor(THEME.colors.snakeLight),
-        100, Math.round(t * 100)
-      );
-      const color = Phaser.Display.Color.GetColor(c.r, c.g, c.b);
-      const radius = (i === 0 ? 12 : 11) - Math.min(2, i * 0.1);
-      this.snakeGfx.fillStyle(color, 1);
-      this.snakeGfx.fillCircle(p.x, p.y, radius);
-      if (i === 0) {
-        // simple eyes (will rotate-with-direction in a later task)
-        this.snakeGfx.fillStyle(0x1a1a1a, 1);
-        this.snakeGfx.fillCircle(p.x + 3, p.y - 2, 2);
-        this.snakeGfx.fillCircle(p.x + 3, p.y + 2, 2);
-      }
+      this.tweens.add({ targets: this.segments[i], x: p.x, y: p.y, duration: dur, ease: THEME.easings.snakeMove });
     }
   }
 }
