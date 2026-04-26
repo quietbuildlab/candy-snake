@@ -6,6 +6,7 @@ import { Grid } from '../game/Grid';
 import { Snake, findRespawnPlacement } from '../game/Snake';
 import { gameFlowMachine } from '../game/GameFlowMachine';
 import { KeyboardInput } from '../input/KeyboardInput';
+import { SwipeInput } from '../input/SwipeInput';
 import { pickFoodKind, findEmptyCell } from '../game/FoodSpawner';
 import { showScorePopup } from '../ui/ScorePopup';
 import { levelForFruits, tickMsForLevel, obstacleCountForLevel } from '../game/Progression';
@@ -62,6 +63,7 @@ export class GameScene extends Phaser.Scene {
     this.hud.setLevel(1);
     this.spawnSegments();
     this.input2 = new KeyboardInput(this, this.snake.direction);
+    new SwipeInput(this, this.input2.getBuffer());
     this.spawnFood();
     this.startTickLoop();
     this.input.keyboard?.on('keydown-ESC', () => this.pauseGame());
