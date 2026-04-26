@@ -6,3 +6,7 @@ dist
 .vscode
 .idea
 *.tsbuildinfo
+src/**/*.js
+tests/**/*.js
+src/**/*.d.ts
+tests/**/*.d.ts
