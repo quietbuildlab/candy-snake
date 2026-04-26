@@ -10,7 +10,10 @@ import { pickFoodKind, findEmptyCell } from '../game/FoodSpawner';
 import { showScorePopup } from '../ui/ScorePopup';
 import { levelForFruits, tickMsForLevel, obstacleCountForLevel } from '../game/Progression';
 import { showLevelBanner } from '../ui/LevelBanner';
+import { rollPowerUpDrop } from '../game/FoodSpawner';
+import { PowerUpController } from '../game/PowerUps';
 import type { Cell, FoodKind } from '../types';
+import type { PowerUpKind } from '../types';
 
 export class GameScene extends Phaser.Scene {
   private grid!: Grid;
@@ -31,6 +34,8 @@ export class GameScene extends Phaser.Scene {
   private level = 1;
   private obstacles: Cell[] = [];
   private obstacleGfx: Phaser.GameObjects.Rectangle[] = [];
+  private pu = new PowerUpController();
+  private puIcon: { kind: PowerUpKind; cell: Cell; spawnedAt: number; gfx: Phaser.GameObjects.Container } | null = null;
   private flow = createActor(gameFlowMachine);
 
   constructor() { super('GameScene'); }
@@ -64,7 +69,37 @@ export class GameScene extends Phaser.Scene {
     const s = new Set<string>();
     for (const c of this.snake.body) s.add(`${c.x},${c.y}`);
     for (const c of this.obstacles) s.add(`${c.x},${c.y}`);
+    if (this.puIcon) s.add(`${this.puIcon.cell.x},${this.puIcon.cell.y}`);
     return s;
+  }
+
+  private maybeDropPowerUp() {
+    if (this.puIcon) return; // at most one icon at a time
+    if (!rollPowerUpDrop(this.rng)) return;
+    const blocked = this.boardBlockedCells();
+    if (this.food) blocked.add(`${this.food.cell.x},${this.food.cell.y}`);
+    const cell = findEmptyCell(this.grid, blocked, this.rng);
+    if (!cell) return;
+    const kinds: PowerUpKind[] = ['slowmo', 'ghost', 'double'];
+    const kind = kinds[Math.floor(this.rng() * 3)];
+    const p = this.cellCenterPx(cell);
+    const colorByKind = { slowmo: 0x60a5fa, ghost: 0xffffff, double: THEME.colors.accentPurple };
+    const g = this.add.container(p.x, p.y);
+    const ring = this.add.circle(0, 0, 14, colorByKind[kind], 0.85);
+    ring.setStrokeStyle(2, 0xffffff);
+    const label = this.add.text(0, 0, ({slowmo:'❄', ghost:'👻', double:'✨'}[kind]), { fontSize: '16px' }).setOrigin(0.5);
+    g.add([ring, label]);
+    g.setScale(0);
+    this.tweens.add({ targets: g, scale: 1, duration: 250, ease: THEME.easings.foodPop });
+    this.puIcon = { kind, cell, spawnedAt: this.time.now, gfx: g };
+  }
+
+  private collectPowerUpIfHere(headCell: Cell) {
+    if (!this.puIcon) return;
+    if (headCell.x !== this.puIcon.cell.x || headCell.y !== this.puIcon.cell.y) return;
+    this.pu.activate(this.puIcon.kind);
+    this.puIcon.gfx.destroy();
+    this.puIcon = null;
   }
   private renderObstacles() {
     for (const r of this.obstacleGfx) r.destroy();
@@ -151,29 +186,72 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tick() {
+    // Drain power-up timer by the ACTUAL elapsed tick interval. tickEvent.delay
+    // already reflects slow-mo (we adjust it at the end of each tick), so this
+    // gives the real-world duration the spec promises.
+    const elapsed = this.tickEvent?.delay ?? this.currentTickMs;
+    this.pu.tick(elapsed);
+
+    // Power-up icon expiry on the board
+    if (this.puIcon && this.time.now - this.puIcon.spawnedAt >= CONFIG.powerUps.iconLifetimeMs) {
+      this.puIcon.gfx.destroy(); this.puIcon = null;
+    }
+
+    // Apply buffered direction for this tick
     const nextDir = this.input2.consumeDirection();
     this.snake.setDirection(nextDir);
 
+    // Compute proposed new head
     const v = { up:{x:0,y:-1}, down:{x:0,y:1}, left:{x:-1,y:0}, right:{x:1,y:0} }[this.snake.direction];
-    const newHead = { x: this.snake.head.x + v.x, y: this.snake.head.y + v.y };
+    let newHead = { x: this.snake.head.x + v.x, y: this.snake.head.y + v.y };
+    const ghosting = this.pu.isActive('ghost');
+    let wrapped = false;
 
-    const outOfBounds = !this.grid.inBounds(newHead);
-    const intoBody = this.snake.body.some((c, i) => i > 0 && c.x === newHead.x && c.y === newHead.y);
-    const intoObstacle = this.obstacles.some(o => o.x === newHead.x && o.y === newHead.y);
-    if (outOfBounds || intoBody || intoObstacle) {
-      if (this.time.now >= this.invulnerableUntil) {
+    // Wall handling
+    if (!this.grid.inBounds(newHead)) {
+      if (ghosting) {
+        newHead = this.grid.wrap(newHead);
+        wrapped = true;
+      } else if (this.time.now >= this.invulnerableUntil) {
         this.loseLife();
         return;
+      } else {
+        // INVULNERABLE collision: do not move into the illegal cell.
+        // Skipping the tick keeps state legal; player still steers next tick.
+        return;
       }
-      // INVULNERABLE collision: do NOT advance into the illegal cell.
+    }
+
+    // Body / obstacle handling (obstacles still kill even in ghost mode)
+    const intoBody = !ghosting && this.snake.body.some((c, i) => i > 0 && c.x === newHead.x && c.y === newHead.y);
+    const intoObstacle = this.obstacles.some(o => o.x === newHead.x && o.y === newHead.y);
+    if (intoBody || intoObstacle) {
+      if (this.time.now >= this.invulnerableUntil) { this.loseLife(); return; }
+      // INVULNERABLE: skip the move (same rationale as wall case)
       return;
     }
 
+    // Apply movement. We compute the head ourselves (so wrap/ghost are honored
+    // in one place) and shift the body manually rather than calling advance().
     const willEat = !!this.food && newHead.x === this.food.cell.x && newHead.y === this.food.cell.y;
-    this.snake.advance({ grow: willEat, maxLength: CONFIG.snake.maxLength });
+    this.snake.body.unshift(newHead);
+    const shouldGrow = willEat && this.snake.length <= CONFIG.snake.maxLength;
+    if (!shouldGrow) this.snake.body.pop();
+
     this.tweenSegmentsToBody();
+    if (wrapped) {
+      // Don't tween the head across the entire board. Snap it to the wrapped
+      // cell instead. (Body segments tween normally — only the head jumps.)
+      const headPx = this.cellCenterPx(this.snake.body[0]);
+      this.tweens.killTweensOf(this.segments[0]);
+      this.segments[0].setPosition(headPx.x, headPx.y);
+    }
+
+    this.collectPowerUpIfHere(newHead);
+
     if (willEat && this.food) {
-      const grant = { apple: 10, berry: 30, star: 50 }[this.food.kind];
+      const baseGrant = { apple: 10, berry: 30, star: 50 }[this.food.kind];
+      const grant = this.pu.isActive('double') ? baseGrant * 2 : baseGrant;
       this.score += grant;
       const p = this.cellCenterPx(this.food.cell);
       showScorePopup(this, p.x, p.y, `+${grant}!`, ({apple:THEME.colors.apple, berry:THEME.colors.berry, star:THEME.colors.star}[this.food.kind]));
@@ -189,6 +267,14 @@ export class GameScene extends Phaser.Scene {
         if (desired > this.obstacles.length) this.addObstacles(desired);
       }
       this.spawnFood();
+      this.maybeDropPowerUp();
+    }
+
+    // Apply slow-mo by scaling next interval (drain in the next tick reads this back)
+    if (this.tickEvent && this.pu.isActive('slowmo')) {
+      this.tickEvent.delay = this.currentTickMs * CONFIG.powerUps.slowmoFactor;
+    } else if (this.tickEvent) {
+      this.tickEvent.delay = this.currentTickMs;
     }
   }
 
