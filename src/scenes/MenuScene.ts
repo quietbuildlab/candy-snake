@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { THEME } from '../theme';
 import { loadHighScore } from '../storage';
+import { AudioManager } from '../audio/AudioManager';
 
 export class MenuScene extends Phaser.Scene {
   constructor() { super('MenuScene'); }
@@ -25,5 +26,20 @@ export class MenuScene extends Phaser.Scene {
 
     playBtn.on('pointerdown', () => this.scene.start('GameScene'));
     this.input.keyboard?.on('keydown-SPACE', () => this.scene.start('GameScene'));
+
+    AudioManager.setGame(this.game);
+    const unlock = () => AudioManager.unlock(this);
+    playBtn.on('pointerdown', unlock);
+    this.input.keyboard?.on('keydown', unlock);
+    // Sound toggle. ORDER MATTERS: flip state BEFORE unlock so that if the
+    // user's first action is muting, AudioManager.unlock() reads soundOn=false
+    // and never starts BGM audibly. Spec §7 audio-gating last bullet.
+    const toggle = this.add.text(20, 20, AudioManager.isOn() ? '🔊' : '🔇', { fontSize: '28px' }).setInteractive({ useHandCursor: true });
+    toggle.on('pointerdown', () => {
+      const newState = !AudioManager.isOn();
+      AudioManager.setOn(newState);
+      unlock();
+      toggle.setText(AudioManager.isOn() ? '🔊' : '🔇');
+    });
   }
 }

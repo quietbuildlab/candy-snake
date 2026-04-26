@@ -14,6 +14,7 @@ import { showLevelBanner } from '../ui/LevelBanner';
 import { rollPowerUpDrop } from '../game/FoodSpawner';
 import { PowerUpController } from '../game/PowerUps';
 import { HUD } from '../ui/HUD';
+import { AudioManager } from '../audio/AudioManager';
 import type { Cell, FoodKind } from '../types';
 import type { PowerUpKind } from '../types';
 
@@ -76,11 +77,13 @@ export class GameScene extends Phaser.Scene {
     this.flow.send({ type: 'PAUSE' });
     this.scene.pause();
     this.scene.launch('PauseScene');
+    AudioManager.duckBgm();
   }
 
   public resumeFromPause() {
     this.flow.send({ type: 'RESUME' });
     this.scene.resume();
+    AudioManager.unduckBgm();
   }
 
   /**
@@ -122,6 +125,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.puIcon) return;
     if (headCell.x !== this.puIcon.cell.x || headCell.y !== this.puIcon.cell.y) return;
     this.pu.activate(this.puIcon.kind);
+    AudioManager.play('power-up');
     this.hud.setPowerUp(this.pu.active!.kind, this.pu.active!.remainingMs, this.pu.active!.remainingMs);
     this.puIcon.gfx.destroy();
     this.puIcon = null;
@@ -281,6 +285,7 @@ export class GameScene extends Phaser.Scene {
       const baseGrant = { apple: 10, berry: 30, star: 50 }[this.food.kind];
       const grant = this.pu.isActive('double') ? baseGrant * 2 : baseGrant;
       this.score += grant;
+      AudioManager.play(this.food.kind === 'apple' ? 'chomp' : this.food.kind === 'berry' ? 'pop' : 'chime');
       this.hud.setScore(this.score);
       const p = this.cellCenterPx(this.food.cell);
       showScorePopup(this, p.x, p.y, `+${grant}!`, ({apple:THEME.colors.apple, berry:THEME.colors.berry, star:THEME.colors.star}[this.food.kind]));
@@ -293,6 +298,7 @@ export class GameScene extends Phaser.Scene {
         this.currentTickMs = tickMsForLevel(newLevel);
         this.startTickLoop();
         showLevelBanner(this, newLevel);
+        AudioManager.play('level-up');
         const desired = obstacleCountForLevel(newLevel);
         if (desired > this.obstacles.length) this.addObstacles(desired);
       }
@@ -309,6 +315,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private loseLife() {
+    AudioManager.play('oof');
     this.lives--;
     this.hud.setLives(this.lives);
     this.flow.send({ type: 'HIT', livesAfter: this.lives });
@@ -318,6 +325,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (this.lives <= 0) {
       this.tickEvent?.destroy();
+      AudioManager.play('game-over');
       this.scene.start('GameOverScene', { score: this.score });
       return;
     }
