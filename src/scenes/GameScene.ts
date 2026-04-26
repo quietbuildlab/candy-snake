@@ -1,8 +1,10 @@
 import Phaser from 'phaser';
+import { createActor } from 'xstate';
 import { CONFIG } from '../config';
 import { THEME } from '../theme';
 import { Grid } from '../game/Grid';
-import { Snake } from '../game/Snake';
+import { Snake, findRespawnPlacement } from '../game/Snake';
+import { gameFlowMachine } from '../game/GameFlowMachine';
 import { KeyboardInput } from '../input/KeyboardInput';
 import { pickFoodKind, findEmptyCell } from '../game/FoodSpawner';
 import { showScorePopup } from '../ui/ScorePopup';
@@ -21,10 +23,16 @@ export class GameScene extends Phaser.Scene {
   private foodGfx?: Phaser.GameObjects.Container;
   private score = 0;
   private rng = () => Math.random();
+  private lives = CONFIG.lives.start;
+  private invulnerableUntil = 0;
+  private flow = createActor(gameFlowMachine);
 
   constructor() { super('GameScene'); }
 
   create() {
+    this.flow = createActor(gameFlowMachine);
+    this.flow.start();
+    this.events.once('shutdown', () => this.flow.stop());
     this.grid = new Grid(CONFIG.grid.cols, CONFIG.grid.rows, CONFIG.grid.cellPx);
     this.snake = new Snake(
       { x: CONFIG.snake.initialHeadCol, y: CONFIG.snake.initialHeadRow },
@@ -119,12 +127,24 @@ export class GameScene extends Phaser.Scene {
   private tick() {
     const nextDir = this.input2.consumeDirection();
     this.snake.setDirection(nextDir);
-    // Compute proposed head
-    const willEat = !!this.food && (() => {
-      const v = { up: {x:0,y:-1}, down: {x:0,y:1}, left: {x:-1,y:0}, right: {x:1,y:0} }[this.snake.direction];
-      const nh = { x: this.snake.head.x + v.x, y: this.snake.head.y + v.y };
-      return Grid.cellsEqual(nh, this.food!.cell);
-    })();
+
+    const v = { up:{x:0,y:-1}, down:{x:0,y:1}, left:{x:-1,y:0}, right:{x:1,y:0} }[this.snake.direction];
+    const newHead = { x: this.snake.head.x + v.x, y: this.snake.head.y + v.y };
+
+    const outOfBounds = !this.grid.inBounds(newHead);
+    const intoBody = this.snake.body.some((c, i) => i > 0 && c.x === newHead.x && c.y === newHead.y);
+
+    if (outOfBounds || intoBody) {
+      if (this.time.now >= this.invulnerableUntil) {
+        this.loseLife();
+        return;
+      }
+      // INVULNERABLE collision: do NOT advance into the illegal cell.
+      // Skipping the tick keeps state legal; player still steers next tick.
+      return;
+    }
+
+    const willEat = !!this.food && newHead.x === this.food.cell.x && newHead.y === this.food.cell.y;
     this.snake.advance({ grow: willEat, maxLength: CONFIG.snake.maxLength });
     this.tweenSegmentsToBody();
     if (willEat && this.food) {
@@ -135,6 +155,46 @@ export class GameScene extends Phaser.Scene {
       this.foodGfx?.destroy(); this.foodGfx = undefined; this.food = null;
       this.spawnFood();
     }
+  }
+
+  private loseLife() {
+    this.lives--;
+    this.flow.send({ type: 'HIT', livesAfter: this.lives });
+    // Flash snake red
+    for (const seg of this.segments) {
+      this.tweens.add({ targets: seg, fillColor: 0xff4d6d, duration: 80, yoyo: true, repeat: 1, onComplete: () => seg.setFillStyle(THEME.colors.snakeLight) });
+    }
+    if (this.lives <= 0) {
+      this.tickEvent?.destroy();
+      this.scene.start('GameOverScene', { score: this.score });
+      return;
+    }
+    // Pause briefly, then respawn
+    if (this.tickEvent) this.tickEvent.paused = true;
+    this.time.delayedCall(400, () => this.flow.send({ type: 'FLASH_DONE' }));
+    this.time.delayedCall(CONFIG.snake.respawnPauseMs, () => this.respawn());
+  }
+
+  private respawn() {
+    const blocked = new Set<string>();
+    if (this.food) blocked.add(`${this.food.cell.x},${this.food.cell.y}`);
+    const r = findRespawnPlacement(this.grid, this.snake.length, blocked);
+    if (!r) { this.flow.send({ type: 'GAME_OVER' }); this.scene.start('GameOverScene', { score: this.score }); return; }
+    this.snake.body = r.body;
+    this.snake.direction = r.direction;
+    this.spawnSegments();
+    this.flow.send({ type: 'RESPAWN_DONE' });
+    this.invulnerableUntil = this.time.now + CONFIG.snake.respawnInvulnerabilityMs;
+    // Blink during invulnerability
+    const blinkTween = this.tweens.add({
+      targets: this.segments, alpha: { from: 1, to: 0.4 }, yoyo: true,
+      duration: 150, repeat: Math.floor(CONFIG.snake.respawnInvulnerabilityMs / 300)
+    });
+    if (this.tickEvent) this.tickEvent.paused = false;
+    this.time.delayedCall(CONFIG.snake.respawnInvulnerabilityMs, () => {
+      blinkTween.stop();
+      this.flow.send({ type: 'INVULNERABLE_DONE' });
+    });
   }
 
   update(_time: number, _delta: number) {
