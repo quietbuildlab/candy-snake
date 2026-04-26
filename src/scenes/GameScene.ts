@@ -4,7 +4,9 @@ import { THEME } from '../theme';
 import { Grid } from '../game/Grid';
 import { Snake } from '../game/Snake';
 import { KeyboardInput } from '../input/KeyboardInput';
-import type { Cell } from '../types';
+import { pickFoodKind, findEmptyCell } from '../game/FoodSpawner';
+import { showScorePopup } from '../ui/ScorePopup';
+import type { Cell, FoodKind } from '../types';
 
 export class GameScene extends Phaser.Scene {
   private grid!: Grid;
@@ -15,6 +17,10 @@ export class GameScene extends Phaser.Scene {
   private tickEvent?: Phaser.Time.TimerEvent;
   private currentTickMs = CONFIG.ticks.initialMs;
   private input2!: KeyboardInput;
+  private food: { cell: Cell; kind: FoodKind; spawnedAt: number } | null = null;
+  private foodGfx?: Phaser.GameObjects.Container;
+  private score = 0;
+  private rng = () => Math.random();
 
   constructor() { super('GameScene'); }
 
@@ -30,7 +36,47 @@ export class GameScene extends Phaser.Scene {
     this.drawBoard();
     this.spawnSegments();
     this.input2 = new KeyboardInput(this, this.snake.direction);
+    this.spawnFood();
     this.startTickLoop();
+  }
+
+  /**
+   * Returns every grid cell currently occupied by the snake plus anything
+   * else that should not be spawned on. Tasks 19 and 20 extend this helper
+   * to include obstacles and the uncollected power-up icon. ALL spawn
+   * logic (food, power-ups, obstacles) must use this — never just the snake.
+   */
+  private boardBlockedCells(): Set<string> {
+    const s = new Set<string>();
+    for (const c of this.snake.body) s.add(`${c.x},${c.y}`);
+    return s;
+  }
+  private spawnFood(kind?: FoodKind) {
+    const blocked = this.boardBlockedCells();
+    const cell = findEmptyCell(this.grid, blocked, this.rng);
+    if (!cell) return;
+    this.food = { cell, kind: kind ?? pickFoodKind(this.rng), spawnedAt: this.time.now };
+    this.renderFood();
+  }
+  private renderFood() {
+    this.foodGfx?.destroy();
+    if (!this.food) return;
+    const p = this.cellCenterPx(this.food.cell);
+    const c = this.add.container(p.x, p.y);
+    const colorByKind = { apple: THEME.colors.apple, berry: THEME.colors.berry, star: THEME.colors.star }[this.food.kind];
+    const dot = this.add.circle(0, 0, 12, colorByKind);
+    c.add(dot);
+    if (this.food.kind === 'berry') {
+      const halo = this.add.circle(0, 0, 18, THEME.colors.berry, 0.18);
+      c.addAt(halo, 0);
+      this.tweens.add({ targets: halo, scale: { from: 0.9, to: 1.15 }, alpha: { from: 0.18, to: 0.05 }, duration: 800, yoyo: true, repeat: -1 });
+    }
+    if (this.food.kind === 'star') {
+      this.tweens.add({ targets: dot, angle: 360, duration: 2000, repeat: -1 });
+    }
+    c.setScale(0);
+    this.tweens.add({ targets: c, scale: 1, duration: 250, ease: THEME.easings.foodPop });
+    this.foodGfx = c;
   }
 
   private cellCenterPx(c: Cell) {
@@ -73,8 +119,22 @@ export class GameScene extends Phaser.Scene {
   private tick() {
     const nextDir = this.input2.consumeDirection();
     this.snake.setDirection(nextDir);
-    this.snake.advance({ grow: false, maxLength: CONFIG.snake.maxLength });
+    // Compute proposed head
+    const willEat = !!this.food && (() => {
+      const v = { up: {x:0,y:-1}, down: {x:0,y:1}, left: {x:-1,y:0}, right: {x:1,y:0} }[this.snake.direction];
+      const nh = { x: this.snake.head.x + v.x, y: this.snake.head.y + v.y };
+      return Grid.cellsEqual(nh, this.food!.cell);
+    })();
+    this.snake.advance({ grow: willEat, maxLength: CONFIG.snake.maxLength });
     this.tweenSegmentsToBody();
+    if (willEat && this.food) {
+      const grant = { apple: 10, berry: 30, star: 50 }[this.food.kind];
+      this.score += grant;
+      const p = this.cellCenterPx(this.food.cell);
+      showScorePopup(this, p.x, p.y, `+${grant}!`, ({apple:THEME.colors.apple, berry:THEME.colors.berry, star:THEME.colors.star}[this.food.kind]));
+      this.foodGfx?.destroy(); this.foodGfx = undefined; this.food = null;
+      this.spawnFood();
+    }
   }
 
   private tweenSegmentsToBody() {
