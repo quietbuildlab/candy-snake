@@ -8,6 +8,8 @@ import { gameFlowMachine } from '../game/GameFlowMachine';
 import { KeyboardInput } from '../input/KeyboardInput';
 import { pickFoodKind, findEmptyCell } from '../game/FoodSpawner';
 import { showScorePopup } from '../ui/ScorePopup';
+import { levelForFruits, tickMsForLevel, obstacleCountForLevel } from '../game/Progression';
+import { showLevelBanner } from '../ui/LevelBanner';
 import type { Cell, FoodKind } from '../types';
 
 export class GameScene extends Phaser.Scene {
@@ -25,6 +27,10 @@ export class GameScene extends Phaser.Scene {
   private rng = () => Math.random();
   private lives = CONFIG.lives.start;
   private invulnerableUntil = 0;
+  private fruitsEaten = 0;
+  private level = 1;
+  private obstacles: Cell[] = [];
+  private obstacleGfx: Phaser.GameObjects.Rectangle[] = [];
   private flow = createActor(gameFlowMachine);
 
   constructor() { super('GameScene'); }
@@ -57,7 +63,27 @@ export class GameScene extends Phaser.Scene {
   private boardBlockedCells(): Set<string> {
     const s = new Set<string>();
     for (const c of this.snake.body) s.add(`${c.x},${c.y}`);
+    for (const c of this.obstacles) s.add(`${c.x},${c.y}`);
     return s;
+  }
+  private renderObstacles() {
+    for (const r of this.obstacleGfx) r.destroy();
+    this.obstacleGfx = this.obstacles.map(c => {
+      const p = this.cellCenterPx(c);
+      const r = this.add.rectangle(p.x, p.y, 22, 22, THEME.colors.obstacle);
+      r.setStrokeStyle(2, THEME.colors.starLight);
+      return r;
+    });
+  }
+  private addObstacles(count: number) {
+    while (this.obstacles.length < count) {
+      const blocked = this.boardBlockedCells();
+      if (this.food) blocked.add(`${this.food.cell.x},${this.food.cell.y}`);
+      const cell = findEmptyCell(this.grid, blocked, this.rng);
+      if (!cell) break;
+      this.obstacles.push(cell);
+    }
+    this.renderObstacles();
   }
   private spawnFood(kind?: FoodKind) {
     const blocked = this.boardBlockedCells();
@@ -133,14 +159,13 @@ export class GameScene extends Phaser.Scene {
 
     const outOfBounds = !this.grid.inBounds(newHead);
     const intoBody = this.snake.body.some((c, i) => i > 0 && c.x === newHead.x && c.y === newHead.y);
-
-    if (outOfBounds || intoBody) {
+    const intoObstacle = this.obstacles.some(o => o.x === newHead.x && o.y === newHead.y);
+    if (outOfBounds || intoBody || intoObstacle) {
       if (this.time.now >= this.invulnerableUntil) {
         this.loseLife();
         return;
       }
       // INVULNERABLE collision: do NOT advance into the illegal cell.
-      // Skipping the tick keeps state legal; player still steers next tick.
       return;
     }
 
@@ -153,6 +178,16 @@ export class GameScene extends Phaser.Scene {
       const p = this.cellCenterPx(this.food.cell);
       showScorePopup(this, p.x, p.y, `+${grant}!`, ({apple:THEME.colors.apple, berry:THEME.colors.berry, star:THEME.colors.star}[this.food.kind]));
       this.foodGfx?.destroy(); this.foodGfx = undefined; this.food = null;
+      this.fruitsEaten++;
+      const newLevel = levelForFruits(this.fruitsEaten);
+      if (newLevel !== this.level) {
+        this.level = newLevel;
+        this.currentTickMs = tickMsForLevel(newLevel);
+        this.startTickLoop();
+        showLevelBanner(this, newLevel);
+        const desired = obstacleCountForLevel(newLevel);
+        if (desired > this.obstacles.length) this.addObstacles(desired);
+      }
       this.spawnFood();
     }
   }
@@ -178,6 +213,7 @@ export class GameScene extends Phaser.Scene {
   private respawn() {
     const blocked = new Set<string>();
     if (this.food) blocked.add(`${this.food.cell.x},${this.food.cell.y}`);
+    for (const o of this.obstacles) blocked.add(`${o.x},${o.y}`);
     const r = findRespawnPlacement(this.grid, this.snake.length, blocked);
     if (!r) { this.flow.send({ type: 'GAME_OVER' }); this.scene.start('GameOverScene', { score: this.score }); return; }
     this.snake.body = r.body;
