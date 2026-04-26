@@ -4,20 +4,17 @@ import { MenuScene } from './scenes/MenuScene';
 import { GameScene } from './scenes/GameScene';
 import { PauseScene } from './scenes/PauseScene';
 import { GameOverScene } from './scenes/GameOverScene';
-import { CONFIG } from './config';
 
-const cardW = CONFIG.grid.cols * CONFIG.grid.cellPx;
-const cardH = CONFIG.grid.rows * CONFIG.grid.cellPx;
+const targetW = Math.min(window.innerWidth, 720);
+const targetH = Math.min(window.innerHeight, 820);
 
 new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
-  width: cardW + 80,
-  height: cardH + 160,
-  backgroundColor: '#ffeede',
-  scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH
-  },
+  width: targetW,
+  height: targetH,
+  backgroundColor: 'rgba(0,0,0,0)',
+  transparent: true,
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   scene: [BootScene, MenuScene, GameScene, PauseScene, GameOverScene]
 });

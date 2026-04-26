@@ -49,7 +49,11 @@ export class GameScene extends Phaser.Scene {
     this.flow = createActor(gameFlowMachine);
     this.flow.start();
     this.events.once('shutdown', () => this.flow.stop());
-    this.grid = new Grid(CONFIG.grid.cols, CONFIG.grid.rows, CONFIG.grid.cellPx);
+    const isMobile = this.scale.width < CONFIG.responsive.breakpointPx;
+    const margin = isMobile ? CONFIG.responsive.mobileMargin : 80;
+    const maxBoardW = isMobile ? Math.min(this.scale.width - margin, CONFIG.responsive.mobileMaxCardPx) : CONFIG.grid.cols * CONFIG.grid.cellPx;
+    const cellPx = Math.floor(maxBoardW / CONFIG.grid.cols);
+    this.grid = new Grid(CONFIG.grid.cols, CONFIG.grid.rows, cellPx);
     this.snake = new Snake(
       { x: CONFIG.snake.initialHeadCol, y: CONFIG.snake.initialHeadRow },
       CONFIG.snake.initialDirection,
