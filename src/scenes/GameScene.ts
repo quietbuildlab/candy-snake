@@ -12,6 +12,7 @@ import { levelForFruits, tickMsForLevel, obstacleCountForLevel } from '../game/P
 import { showLevelBanner } from '../ui/LevelBanner';
 import { rollPowerUpDrop } from '../game/FoodSpawner';
 import { PowerUpController } from '../game/PowerUps';
+import { HUD } from '../ui/HUD';
 import type { Cell, FoodKind } from '../types';
 import type { PowerUpKind } from '../types';
 
@@ -37,6 +38,7 @@ export class GameScene extends Phaser.Scene {
   private pu = new PowerUpController();
   private puIcon: { kind: PowerUpKind; cell: Cell; spawnedAt: number; gfx: Phaser.GameObjects.Container } | null = null;
   private flow = createActor(gameFlowMachine);
+  private hud!: HUD;
 
   constructor() { super('GameScene'); }
 
@@ -53,6 +55,12 @@ export class GameScene extends Phaser.Scene {
     this.boardOriginX = (this.scale.width - this.grid.widthPx) / 2;
     this.boardOriginY = (this.scale.height - this.grid.heightPx) / 2 + 20;
     this.drawBoard();
+    // Pause callback is wired in Task 22 once pauseGame() exists. Leave it
+    // undefined here so Task 21's commit compiles cleanly on its own.
+    this.hud = new HUD(this, this.boardOriginX, this.boardOriginY, this.grid.widthPx);
+    this.hud.setLives(this.lives);
+    this.hud.setScore(0);
+    this.hud.setLevel(1);
     this.spawnSegments();
     this.input2 = new KeyboardInput(this, this.snake.direction);
     this.spawnFood();
@@ -98,6 +106,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.puIcon) return;
     if (headCell.x !== this.puIcon.cell.x || headCell.y !== this.puIcon.cell.y) return;
     this.pu.activate(this.puIcon.kind);
+    this.hud.setPowerUp(this.pu.active!.kind, this.pu.active!.remainingMs, this.pu.active!.remainingMs);
     this.puIcon.gfx.destroy();
     this.puIcon = null;
   }
@@ -190,7 +199,10 @@ export class GameScene extends Phaser.Scene {
     // already reflects slow-mo (we adjust it at the end of each tick), so this
     // gives the real-world duration the spec promises.
     const elapsed = this.tickEvent?.delay ?? this.currentTickMs;
+    const beforeKind = this.pu.active?.kind ?? null;
     this.pu.tick(elapsed);
+    if (beforeKind && !this.pu.active) this.hud.setPowerUp(null);
+    else if (this.pu.active) this.hud.tickRing(this.pu.active.remainingMs);
 
     // Power-up icon expiry on the board
     if (this.puIcon && this.time.now - this.puIcon.spawnedAt >= CONFIG.powerUps.iconLifetimeMs) {
@@ -253,6 +265,7 @@ export class GameScene extends Phaser.Scene {
       const baseGrant = { apple: 10, berry: 30, star: 50 }[this.food.kind];
       const grant = this.pu.isActive('double') ? baseGrant * 2 : baseGrant;
       this.score += grant;
+      this.hud.setScore(this.score);
       const p = this.cellCenterPx(this.food.cell);
       showScorePopup(this, p.x, p.y, `+${grant}!`, ({apple:THEME.colors.apple, berry:THEME.colors.berry, star:THEME.colors.star}[this.food.kind]));
       this.foodGfx?.destroy(); this.foodGfx = undefined; this.food = null;
@@ -260,6 +273,7 @@ export class GameScene extends Phaser.Scene {
       const newLevel = levelForFruits(this.fruitsEaten);
       if (newLevel !== this.level) {
         this.level = newLevel;
+        this.hud.setLevel(newLevel);
         this.currentTickMs = tickMsForLevel(newLevel);
         this.startTickLoop();
         showLevelBanner(this, newLevel);
@@ -280,6 +294,7 @@ export class GameScene extends Phaser.Scene {
 
   private loseLife() {
     this.lives--;
+    this.hud.setLives(this.lives);
     this.flow.send({ type: 'HIT', livesAfter: this.lives });
     // Flash snake red
     for (const seg of this.segments) {
