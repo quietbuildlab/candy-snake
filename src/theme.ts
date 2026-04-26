@@ -1,23 +1,39 @@
 export const THEME = {
   colors: {
+    // Background remains pastel for breathing room
     bgGradientStart: 0xffe9f3,
     bgGradientEnd: 0xe6f3ff,
     surface: 0xfffbf7,
-    snakeDark: 0x3ecf8e,
-    snakeLight: 0x7be495,
-    apple: 0xff4d6d,
-    appleLight: 0xff7a8a,
-    berry: 0xa855f7,
-    berryLight: 0xc084fc,
-    star: 0xfbbf24,
-    starLight: 0xfde68a,
-    obstacle: 0xfbbf24,
-    accentPurple: 0x7a5cff,
+    // Brighter, candy-saturated accents (per UI research; pastels read babyish past 7)
+    snakeDark: 0x2ba855,
+    snakeLight: 0x3fd16c,
+    apple: 0xff4fa3,        // hot candy pink
+    appleLight: 0xff85bd,
+    berry: 0x8a5be0,        // grape purple
+    berryLight: 0xb695f0,
+    star: 0xffd23f,         // sunshine yellow
+    starLight: 0xffe580,
+    obstacle: 0xffa726,     // orange (distinct from yellow star/score)
+    accentPurple: 0x8a5be0,
+    accentBlue: 0x4dc3ff,
     text: 0x1a1a1a,
-    blush: 0xff4d6d
+    blush: 0xff4fa3,
+    // Pillow-button shadow base = ~22% darker than face
+    btnGreenFace: 0x3fd16c,
+    btnGreenBase: 0x2ba855,
+    btnPinkFace: 0xff4fa3,
+    btnPinkBase: 0xc73d80,
+    btnPurpleFace: 0x8a5be0,
+    btnPurpleBase: 0x6a44b3,
+    btnYellowFace: 0xffd23f,
+    btnYellowBase: 0xd9a821,
+    btnWhiteFace: 0xffffff,
+    btnWhiteBase: 0xd6cfca
   },
   font: {
-    family: '"Nunito", system-ui, sans-serif',
+    body: '"Nunito", system-ui, sans-serif',
+    display: '"Fredoka", "Nunito", system-ui, sans-serif',
+    family: '"Nunito", system-ui, sans-serif', // alias for back-compat
     weightHud: 800,
     weightButton: 600,
     weightBody: 400
@@ -25,6 +41,8 @@ export const THEME = {
   easings: {
     snakeMove: 'Cubic.easeOut',
     foodPop: 'Back.easeOut',
-    bannerSlide: 'Quart.easeOut'
+    bannerSlide: 'Quart.easeOut',
+    pillowPress: 'Quad.easeOut',
+    pillowRelease: 'Back.easeOut'
   }
 } as const;

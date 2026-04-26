@@ -1,31 +1,61 @@
 import Phaser from 'phaser';
 import { THEME } from '../theme';
+import { makePillowButton } from '../ui/PillowButton';
 
 export class PauseScene extends Phaser.Scene {
   constructor() { super('PauseScene'); }
+
   create() {
     const { width, height } = this.scale;
-    // Translucent backdrop. Made interactive so it captures (swallows) clicks
-    // and they don't fall through to the GameScene under it. NOTE: do NOT
-    // resume on background click — that's too easy to trigger by accident on
-    // touch devices. Resume is only via the explicit Resume button or ESC.
-    const bg = this.add.rectangle(0, 0, width, height, 0x000000, 0.45).setOrigin(0).setInteractive();
+
+    // Translucent backdrop — interactive to swallow clicks but not resume
+    // (too easy to trigger by accident on touch).
+    const bg = this.add.rectangle(0, 0, width, height, 0x1a1a30, 0.55).setOrigin(0).setInteractive();
     bg.on('pointerdown', () => { /* swallow only */ });
 
-    const card = this.add.rectangle(width/2, height/2, 320, 240, THEME.colors.surface, 1).setStrokeStyle(0).setOrigin(0.5);
-    card.setInteractive(); // swallow clicks on the card
-    this.add.text(width/2, height/2 - 60, 'Paused', { fontFamily: THEME.font.family, fontSize: '32px', fontStyle: '800', color: '#7a5cff' }).setOrigin(0.5);
+    // Card with soft drop shadow effect (two stacked rounded rects)
+    const cardShadow = this.add.graphics();
+    cardShadow.fillStyle(0x1a1a30, 0.25);
+    cardShadow.fillRoundedRect(width / 2 - 170, height / 2 - 145, 340, 290, 28);
+    const card = this.add.graphics();
+    card.fillStyle(THEME.colors.surface, 1);
+    card.fillRoundedRect(width / 2 - 170, height / 2 - 150, 340, 290, 28);
+    card.lineStyle(3, 0xf0e6f5, 1);
+    card.strokeRoundedRect(width / 2 - 170, height / 2 - 150, 340, 290, 28);
+    void cardShadow;
 
-    const mkBtn = (y: number, label: string, onClick: () => void) => {
-      const t = this.add.text(width/2, y, label, { fontFamily: THEME.font.family, fontSize: '20px', fontStyle: '600', color: '#1a1a1a' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-      t.on('pointerdown', onClick);
-    };
-    mkBtn(height/2 - 10, '▶  Resume', () => this.resumeGame());
-    mkBtn(height/2 + 30, '↺  Restart', () => { this.scene.stop('PauseScene'); this.scene.stop('GameScene'); this.scene.start('GameScene'); });
-    mkBtn(height/2 + 70, '⌂  Menu', () => { this.scene.stop('PauseScene'); this.scene.stop('GameScene'); this.scene.start('MenuScene'); });
+    // Title
+    const title = this.add.text(width / 2, height / 2 - 95, 'Paused', {
+      fontFamily: THEME.font.display,
+      fontSize: '40px',
+      fontStyle: '700',
+      color: '#8a5be0'
+    }).setOrigin(0.5);
+    this.tweens.add({ targets: title, scale: { from: 0.7, to: 1 }, duration: 250, ease: 'Back.easeOut' });
+
+    // Pause icon (two rounded bars)
+    const pauseIcon = this.add.graphics();
+    pauseIcon.fillStyle(THEME.colors.berry, 0.2);
+    pauseIcon.fillCircle(width / 2, height / 2 - 95, 40);
+    void pauseIcon;
+
+    // Buttons — pillow style
+    makePillowButton(this, width / 2, height / 2 - 30, {
+      width: 240, height: 56, label: '▶  Resume', color: 'green', breathing: true,
+      onClick: () => this.resumeGame()
+    });
+    makePillowButton(this, width / 2, height / 2 + 38, {
+      width: 240, height: 56, label: '↺  Restart', color: 'pink',
+      onClick: () => { this.scene.stop('PauseScene'); this.scene.stop('GameScene'); this.scene.start('GameScene'); }
+    });
+    makePillowButton(this, width / 2, height / 2 + 106, {
+      width: 240, height: 56, label: '⌂  Menu', color: 'white',
+      onClick: () => { this.scene.stop('PauseScene'); this.scene.stop('GameScene'); this.scene.start('MenuScene'); }
+    });
 
     this.input.keyboard?.on('keydown-ESC', () => this.resumeGame());
   }
+
   private resumeGame() {
     const game = this.scene.get('GameScene') as Phaser.Scene & { resumeFromPause?: () => void };
     game.resumeFromPause?.();

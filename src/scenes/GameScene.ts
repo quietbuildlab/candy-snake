@@ -9,6 +9,7 @@ import { KeyboardInput } from '../input/KeyboardInput';
 import { SwipeInput } from '../input/SwipeInput';
 import { pickFoodKind, findEmptyCell } from '../game/FoodSpawner';
 import { showScorePopup } from '../ui/ScorePopup';
+import { sparkleAt } from '../ui/FX';
 import { levelForFruits, tickMsForLevel, obstacleCountForLevel } from '../game/Progression';
 import { showLevelBanner } from '../ui/LevelBanner';
 import { rollPowerUpDrop } from '../game/FoodSpawner';
@@ -311,7 +312,9 @@ export class GameScene extends Phaser.Scene {
       AudioManager.play(this.food.kind === 'apple' ? 'chomp' : this.food.kind === 'berry' ? 'pop' : 'chime');
       this.hud.setScore(this.score);
       const p = this.cellCenterPx(this.food.cell);
-      showScorePopup(this, p.x, p.y, `+${grant}!`, ({apple:THEME.colors.apple, berry:THEME.colors.berry, star:THEME.colors.star}[this.food.kind]));
+      const foodColor = ({apple:THEME.colors.apple, berry:THEME.colors.berry, star:THEME.colors.star}[this.food.kind]);
+      showScorePopup(this, p.x, p.y, `+${grant}!`, foodColor);
+      sparkleAt(this, p.x, p.y, foodColor, 10);
       this.foodGfx?.destroy(); this.foodGfx = undefined; this.food = null;
       this.fruitsEaten++;
       const newLevel = levelForFruits(this.fruitsEaten);
